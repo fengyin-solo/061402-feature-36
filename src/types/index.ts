@@ -70,3 +70,28 @@ export interface DashboardStats {
   recentOrders: Order[];
   topProducts: Product[];
 }
+
+export interface TutorialTask {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
+  type: 'gather' | 'explore' | 'build';
+  targetAction: string;
+  targetCount: number;
+  currentCount: number;
+  completed: boolean;
+  unlocked: boolean;
+  unlockHint: string;
+  unlockFeatures: string[];
+  order: number;
+}
+
+export interface TutorialState {
+  tasks: TutorialTask[];
+  currentTaskId: string | null;
+  allCompleted: boolean;
+  showTaskPanel: boolean;
+  unlockedFeatures: string[];
+  firstTime: boolean;
+}

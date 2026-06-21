@@ -1,5 +1,8 @@
 <template>
   <div class="island-container">
+    <TutorialPanel />
+    <FeatureUnlockModal />
+    
     <div class="island-header">
       <h1>🏝️ 海岛生存</h1>
       <p>在荒岛上建立你的生存基地</p>
@@ -44,9 +47,16 @@
         <h3>📋 可执行操作</h3>
         
         <div class="action-grid">
-          <div class="action-card" @click="gatherFood">
+          <div 
+            class="action-card" 
+            :class="{ 'highlight': isCurrentTask('gatherFood') }"
+            @click="gatherFood"
+          >
             <div class="action-icon">🍓</div>
-            <div class="action-title">采集食物</div>
+            <div class="action-title">
+              采集食物
+              <span v-if="isCurrentTask('gatherFood')" class="task-badge">当前任务</span>
+            </div>
             <div class="action-desc">在岛上寻找可食用的果实和动物</div>
             <div class="action-time">耗时: 30秒</div>
           </div>
@@ -72,9 +82,16 @@
             <div class="action-time">耗时: 3分钟</div>
           </div>
           
-          <div class="action-card" @click="buildShelter">
+          <div 
+            class="action-card" 
+            :class="{ 'highlight': isCurrentTask('buildShelter') }"
+            @click="buildShelter"
+          >
             <div class="action-icon">🏠</div>
-            <div class="action-title">建造庇护所</div>
+            <div class="action-title">
+              建造庇护所
+              <span v-if="isCurrentTask('buildShelter')" class="task-badge">当前任务</span>
+            </div>
             <div class="action-desc">建造一个安全的住所</div>
             <div class="action-cost">需要: 50木材, 30石头</div>
           </div>
@@ -92,10 +109,21 @@
         <h3>🗺️ 海岛地图</h3>
         <div class="map-container">
           <div class="map-grid">
-            <div v-for="(cell, index) in mapGrid" :key="index" 
-                 :class="'map-cell ' + cell.type"
-                 @click="exploreCell(index)">
+            <div 
+              v-for="(cell, index) in mapGrid" 
+              :key="index" 
+              :class="[
+                'map-cell', 
+                cell.type,
+                { 
+                  'explored': cell.explored,
+                  'highlight': !cell.explored && isCurrentTask('exploreCell')
+                }
+              ]"
+              @click="exploreCell(index)"
+            >
               {{ cell.icon }}
+              <span v-if="!cell.explored && isCurrentTask('exploreCell')" class="map-task-badge">点击探索</span>
             </div>
           </div>
           <div class="map-legend">
@@ -120,6 +148,20 @@
       </div>
     </div>
     
+    <div v-if="unlockedFeaturesList.length > 0" class="unlocked-features">
+      <h3>🔓 已解锁功能</h3>
+      <div class="features-grid">
+        <div 
+          v-for="feature in unlockedFeaturesList" 
+          :key="feature.id" 
+          class="feature-card"
+        >
+          <div class="feature-icon">{{ feature.icon }}</div>
+          <div class="feature-title">{{ feature.title }}</div>
+        </div>
+      </div>
+    </div>
+    
     <div class="message-log">
       <h3>📜 生存日志</h3>
       <div class="log-list">
@@ -133,8 +175,27 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
+import { useTutorialStore } from '../store';
+import TutorialPanel from '../components/TutorialPanel.vue';
+import FeatureUnlockModal from '../components/FeatureUnlockModal.vue';
+
+const tutorialStore = useTutorialStore();
+
+const isCurrentTask = (actionName) => {
+  const currentTask = tutorialStore.currentTask;
+  return currentTask && currentTask.targetAction === actionName;
+};
+
+const unlockedFeaturesList = computed(() => {
+  return tutorialStore.unlockedFeatures
+    .map(id => {
+      const desc = tutorialStore.getFeatureDescription(id);
+      return desc ? { id, ...desc } : null;
+    })
+    .filter(Boolean);
+});
 
 const resources = ref({
   food: 100,
@@ -169,8 +230,7 @@ const addMessage = (content) => {
   }
 };
 
-const performAction = (name, cost, gain, time) => {
-  // 检查资源是否足够
+const performAction = (name, cost, gain, time, actionName) => {
   for (const [resource, amount] of Object.entries(cost)) {
     if (resources.value[resource] < amount) {
       ElMessage.error(`资源不足，无法${name}`);
@@ -178,28 +238,29 @@ const performAction = (name, cost, gain, time) => {
     }
   }
   
-  // 消耗资源
   for (const [resource, amount] of Object.entries(cost)) {
     resources.value[resource] -= amount;
   }
   
   addMessage(`开始${name}...`);
   
-  // 模拟耗时
   setTimeout(() => {
-    // 获得资源
     for (const [resource, amount] of Object.entries(gain)) {
       resources.value[resource] += amount;
     }
     addMessage(`${name}完成！获得了${Object.entries(gain).map(([k, v]) => `${v}${k}`).join('、')}`);
     ElMessage.success(`${name}完成！`);
+    
+    if (actionName) {
+      tutorialStore.trackAction(actionName);
+    }
   }, time);
   
   return true;
 };
 
 const gatherFood = () => {
-  performAction('采集食物', {}, { food: 20 }, 30000);
+  performAction('采集食物', {}, { food: 20 }, 30000, 'gatherFood');
 };
 
 const collectWater = () => {
@@ -215,7 +276,7 @@ const mineStone = () => {
 };
 
 const buildShelter = () => {
-  if (performAction('建造庇护所', { wood: 50, stone: 30 }, {}, 300000)) {
+  if (performAction('建造庇护所', { wood: 50, stone: 30 }, {}, 300000, 'buildShelter')) {
     addMessage('庇护所建造完成！你现在有了一个安全的住所。');
   }
 };
@@ -247,7 +308,6 @@ const exploreCell = (index) => {
     setTimeout(() => {
       cell.explored = true;
       
-      // 随机事件
       const random = Math.random();
       if (random < 0.3) {
         const foodGain = Math.floor(Math.random() * 20) + 10;
@@ -270,6 +330,8 @@ const exploreCell = (index) => {
         addMessage(`探索遇到了危险！损失了10食物和10水`);
         ElMessage.warning(`探索遇到了危险！损失了10食物和10水`);
       }
+      
+      tutorialStore.trackAction('exploreCell');
     }, 5000);
   }).catch(() => {
     addMessage('取消了探索');
@@ -277,8 +339,13 @@ const exploreCell = (index) => {
 };
 
 onMounted(() => {
+  tutorialStore.init();
   addMessage('欢迎来到海岛生存游戏！');
-  // 定期消耗资源
+  
+  if (tutorialStore.firstTime || tutorialStore.tasks[0]?.unlocked) {
+    addMessage('💡 新手提示：点击右侧任务面板查看引导任务，完成任务解锁新功能！');
+  }
+  
   setInterval(() => {
     resources.value.food -= 5;
     resources.value.water -= 5;
@@ -299,7 +366,7 @@ onMounted(() => {
         addMessage('重新开始游戏！');
       });
     }
-  }, 60000); // 每分钟消耗一次
+  }, 60000);
 });
 </script>
 
@@ -405,6 +472,32 @@ onMounted(() => {
   border-color: #667eea;
 }
 
+.action-card.highlight {
+  border-color: #409eff;
+  background: #e8f4fa;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(64, 158, 255, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 10px rgba(64, 158, 255, 0);
+  }
+}
+
+.task-badge {
+  display: inline-block;
+  background: #409eff;
+  color: white;
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
 .action-icon {
   font-size: 48px;
   margin-bottom: 12px;
@@ -479,6 +572,35 @@ onMounted(() => {
   border-color: #409eff;
 }
 
+.map-cell.highlight {
+  border-color: #409eff;
+  background: #e8f4fa;
+  animation: mapPulse 2s infinite;
+  position: relative;
+}
+
+@keyframes mapPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(64, 158, 255, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(64, 158, 255, 0);
+  }
+}
+
+.map-task-badge {
+  position: absolute;
+  bottom: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #409eff;
+  color: white;
+  font-size: 9px;
+  padding: 2px 6px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
 .map-legend {
   display: flex;
   justify-content: center;
@@ -536,6 +658,51 @@ onMounted(() => {
 .log-content {
   flex: 1;
   color: #666;
+}
+
+.unlocked-features {
+  background: white;
+  border-radius: 12px;
+  padding: 30px;
+  margin-bottom: 30px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.unlocked-features h3 {
+  margin: 0 0 20px 0;
+  font-size: 24px;
+  color: #333;
+}
+
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 15px;
+}
+
+.feature-card {
+  background: linear-gradient(135deg, #667eea10 0%, #764ba210 100%);
+  border: 1px solid #667eea30;
+  border-radius: 8px;
+  padding: 15px;
+  text-align: center;
+  transition: all 0.3s ease;
+}
+
+.feature-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+}
+
+.feature-card .feature-icon {
+  font-size: 32px;
+  margin-bottom: 8px;
+}
+
+.feature-card .feature-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: #333;
 }
 
 @media (max-width: 768px) {
